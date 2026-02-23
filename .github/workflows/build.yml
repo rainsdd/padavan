@@ -1,63 +1,77 @@
-name: build
+name: Build Padavan for K2P
 
-on: 
+on:
   push:
-    branches:
-    - "*"
-  workflow_dispatch:
+    branches: [ "main" ]          # 只在 main 分支推送时触发构建
+  workflow_dispatch:              # 允许手动触发
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        target: [K2P, K2P-NANO, K2P-USB]
-        toolchain: [mipsel-linux-musl]
     steps:
-      - uses: actions/checkout@v3
-      - uses: hendrikmuhs/ccache-action@v1.2
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.target }}-${{ matrix.toolchain }}
-      - uses: actions/setup-go@v4
+          key: k2p-padavan
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: '1.20'
           check-latest: true
           cache: false
-      - uses: actions/setup-node@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: 18
           check-latest: true
-      - name: Prepare
+
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install libtool-bin gperf python3-docutils autopoint gettext ccache
-      - name: Build
-        run: |
-          make ${{ matrix.target }} TOOLCHAIN=${{ matrix.toolchain }}
-          if [ "${{ matrix.target }}" = "K2P-NANO" ]; then
-            image=$(ls trunk/images/*.trx)
-            mv $image $(echo $image | sed 's/K2P/K2P-NANO/')
-          fi
-      - uses: actions/upload-artifact@v3
+          sudo apt install -y libtool-bin gperf python3-docutils autopoint gettext ccache
+
+      - name: Build firmware
+        run: make K2P TOOLCHAIN=mipsel-linux-musl
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.toolchain }}
+          name: padavan-k2p
           path: trunk/images/*.trx
+
   publish:
-    needs: [build]
+    needs: build
     runs-on: ubuntu-22.04
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' }}  # 仅 main 分支发布
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
-      - name: Set Tag Name
-        run: echo "TAG_ANME=$(date +%Y%m%d)" >> $GITHUB_ENV
-      - uses: rickstaa/action-create-tag@v1
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download artifact
+        uses: actions/download-artifact@v3
         with:
-          tag: ${{ env.TAG_ANME }}
+          name: padavan-k2p
+          path: firmware
+
+      - name: Set release tag
+        run: echo "TAG_NAME=K2P-$(date +%Y%m%d)" >> $GITHUB_ENV
+
+      - name: Create Git tag
+        uses: rickstaa/action-create-tag@v1
+        with:
+          tag: ${{ env.TAG_NAME }}
           force_push_tag: true
-      - uses: ncipollo/release-action@v1
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
         with:
           commit: ${{ github.sha }}
-          tag: ${{ env.TAG_ANME }}
-          artifacts: "mipsel-linux-musl/*.trx"
+          tag: ${{ env.TAG_NAME }}
+          artifacts: "firmware/*.trx"
           allowUpdates: true
+          prerelease: false
