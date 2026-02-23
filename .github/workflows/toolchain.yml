@@ -1,40 +1,43 @@
-name: toolchain
+# .github/workflows/toolchain.yml
+name: Build Cross Toolchain (for K2P)
 
-on: 
-  workflow_dispatch:
+on:
+  workflow_dispatch:  # 仅手动触发，避免误跑
 
 jobs:
   build:
-    name: build
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        target: [mipsel-linux-uclibc, mipsel-linux-musl]
     steps:
-      - uses: actions/checkout@v3
-      - name: Prepare
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
+          sudo apt install -y unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
             fakeroot kmod cpio git python3-docutils gettext automake autopoint \
             texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev \
-            libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin
-      - name: Build
+            libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
+
+      - name: Build mipsel-linux-musl toolchain
         run: |
-          make CT_TARGET=${CT_TARGET} CT_VERSION=${CT_VERSION}
-          cd crosstool-ng-${CT_VERSION}/toolchain-mipsel
-          tar cJf ../../${CT_TARGET}.tar.xz *
-        env:
-          CT_TARGET: ${{ matrix.target }}
-          CT_VERSION: 1.26.0
-        working-directory: toolchain
-      - uses: actions/upload-artifact@v3
+          set -e
+          make CT_TARGET=mipsel-linux-musl CT_VERSION=1.26.0
+          cd toolchain/crosstool-ng-1.26.0/toolchain-mipsel
+          tar cJf ../../../mipsel-linux-musl.tar.xz .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: toolchain
-          path: toolchain/${{ matrix.target }}.tar.xz
-      - uses: svenstaro/upload-release-action@2.2.0
+          name: toolchain-mipsel-linux-musl
+          path: mipsel-linux-musl.tar.xz
+
+      - name: Publish to GitHub Release
+        uses: svenstaro/upload-release-action@2.2.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: toolchain/${{ matrix.target }}.tar.xz
-          tag: toolchain
-          overwrite: true
+          file: mipsel-linux-musl.tar.xz
+          asset_name: mipsel-linux-musl.tar.xz
+          tag: toolchain-v1.26.0
+          release_name: Padavan Toolchain (mipsel-linux-musl)
+          overwrite: false
